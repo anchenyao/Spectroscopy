@@ -22,7 +22,7 @@ for a in range(4, 0, -1):
   for b in range(a,0, -1):
     atom2 = valence_inv[b]
     for i in range(1, min(valence[atom1], valence[atom2]) + (atom1 != atom2), 1):
-      bondTypes.append((atom1, atom2, i))
+      bondTypes.append((min(atom1, atom2), max(atom1, atom2) , i))
       if atom1 == 'C':
         carbonBondTypes.append((atom1, atom2, i))
 
@@ -104,7 +104,7 @@ def carbonIndex():
   return outDict
   
 def bondIndex():
-  outdict = {}
+  outDict = {}
   for i in range(len(bondTypes)):
     outDict[bondTypes[i]] = i
   return outDict
@@ -115,8 +115,9 @@ def countBonds(edges, vertices):
   for i in range(len(vertices)):
     for j in range(i, len(vertices), 1):
       if edges[i][j] != 0:
-        out[bindex[(vertices[i], vertices[j], edges[i][j])]] += 1
-  return out
+        out[bindex[(min(vertices[i], vertices[j]), max(vertices[i], vertices[j]), edges[i][j])]] += 1
+        #out[bindex[(vertices[i], vertices[j], edges[i][j])]] += 1
+  return out 
 
 def countCarbons(edges, vertices):
   cindex = carbonIndex()
@@ -128,71 +129,82 @@ def countCarbons(edges, vertices):
         if edges[i][j] != 0:
           bonded.append((vertices[j], edges[i][j]))
       bonded = tuple(sorted(bonded))
-      out[cindex[bonded]] += 1
+      try: # in case we are looking at subgraph, carbon type may not be complete
+        out[cindex[bonded]] += 1
+      except:
+        pass
   return out
+
 
 '''maps data to max_v x (3 * max_v + 116) matrix
 col [0, 3*max_v - 1] is edge information
 col 3*max_v is val remaining
-col [3*max_v + 1,3*max_v + 4] is within 2 per-vertex info
+col [3*max_v + 1,3*max_v + 4] is within 2 per-vertex info (remaining)
 col [3*max_v + 5, 3*max_v + 8] is atom type
-col [3*max_v + 9, 3*max_v + 88] is carbon type count, same for all vertices
-col [3*max_v + 89, 3*max_v + 115] is bond type count, same for all vertices
+col [3*max_v + 9, 3*max_v + 88] is carbon type count, same for all vertices (remaining)
+col [3*max_v + 89, 3*max_v + 115] is bond type count, same for all vertices (remaining)
 '''
-def featurize(edges, vertices):
+def featurize(edges, vertices, subedges): 
   carb_count = countCarbons(edges, vertices)
   bond_count = countBonds(edges, vertices)
   withinTwo = twoAwayPerVertex(edges, vertices)
+ 
+  carb_countSub = countCarbons(subedges, vertices)
+  bond_countSub = countBonds(subedges, vertices) 
+  withinTwoSub = twoAwayPerVertex(subedges, vertices)
+
 
   out = [[0] * (3 * max_vertices + per_vertex_dimension) for i in range(len(vertices))]
   for i in range(len(vertices)):
-    out[i][3 * max_vertices] = valence[vertices[i]]
+    out[i][3 * max_vertices] = valence[vertices[i]] - sum(subedges[i])
     out[i][3 * max_vertices + 4 + valence[vertices[i]]] = 1
     for j in range(4): #within two edges
-      out[i][3 * max_vertices + 1 + j] = withinTwo[i][j]
+      out[i][3 * max_vertices + 1 + j] = withinTwo[i][j] - withinTwoSub[i][j]
     for j in range(80): #carbon types
-      out[i][3 * max_vertices + 9 + j] = carb_count[j]
+      out[i][3 * max_vertices + 9 + j] = carb_count[j] - carb_countSub[j]
     for j in range(17): #bond types
-      out[i][3 * max_vertices + 89 + j] = bond_count[j]
+      out[i][3 * max_vertices + 89 + j] = bond_count[j] - bond_countSub[j]
 
 
   #map edge matrix to a max_v by 3*max_v binary indicator matrix
-  for i in range(len(edges)):
-    for j in range(i, len(edges), 1):
-      if edges[i][j] != 0:
-        out[i][3 * j + edges[i][j] - 1] = 1
-        out[i][3* max_vertices] -= edges[i][j]
-        out[j][3* max_vertices] -= edges[i][j]
+  for i in range(len(subedges)):
+    for j in range(i, len(subedges), 1):
+      if subedges[i][j] != 0:
+        out[i][3 * j + subedges[i][j] - 1] = 1
   return out
 
 
-def generateTrainingPair(edges):
-  out = [[0 for i in range(len(edges))] for j in range(len(edges))]
+def generateTrainingPair(edges, vertices): #FIX TURN INTO PROBABILITIES
+  out = [[[0]*3 for i in range(len(edges))] for j in range(len(edges))]
   prob = 0.3 * np.random.uniform(0,1) + 0.7 * np.random.beta(3,3)
   removed = []
   for i in range(len(edges)):
     for j in range(i, len(edges), 1):
-      if edges[i][j] != 0:
-        if np.random.binomial(1, prob) != 1:
-          out[i][j] = edges[i][j]
-          out[j][i] = edges[j][i]
-        else:
-          removed.append((i,j))
+      for k in range(3):
+        if edges[i][j][k] != 0:
+          if np.random.binomial(1, prob) != 1:
+            out[i][j][k] = 1
+            out[j][i][k] = 1
+          else:
+            removed.append((i,j,k))
+
   if len(removed) > 0:
     addindex = np.random.randint(len(removed))
-    out2 = [[out[i][j] for j in range(len(out))] for i in range(len(out))]
+    out2 = [[[out[i][j][k] for k in range(3)] for j in range(len(out))] for i in range(len(out))]
     i_removed = removed[addindex][0]
     j_removed = removed[addindex][1]
-    out2[i_removed][j_removed] = edges[i_removed][j_removed]
-    out2[j_removed][i_removed] = edges[j_removed][i_removed]
-    return (out,out2)
+    k_removed = removed[addindex][2]
+    out2[i_removed][j_removed][k_removed] = 1
+    out2[j_removed][i_removed][k_removed] = 1
+    probs = out2/np.array(out2).sum()
+    return (featurize(graph3TensorTo2Tensor(edges), vertices, graph3TensorTo2Tensor(out)),probs)
   else:
     return None
 
-def generateTrainingPairsN(edges, N):
+def generateTrainingPairsN(edges, vertices, N):
   output = []
   for i in range(N):
-    trainingPair = generateTrainingPair(edges)
+    trainingPair = generateTrainingPair(edges, vertices)
     if trainingPair != None:
       output.append(trainingPair)
   return output
@@ -206,10 +218,85 @@ def graph2TensorTo3Tensor(edges):
         out[i][j][edges[i][j] - 1] = 1
   return out
 
+def graph3TensorTo2Tensor(edges):
+  out = [[0 for i in range(len(edges))] for j in range(len(edges))]
+  for i in range(len(edges)):
+    for j in range(len(edges)):
+      for k in range(3):
+        if edges[i][j][k] != 0:
+          out[i][j] = k+1
+  return out
+
+def trimBadValence(mols): #mols is (v, e), where e is 2Tensor, runs in O(mols^2), can make O(mols) if necessary by using pointers on 'bad'
+  bad = []
+  out = []
+  for i in range(len(mols)):
+    vals = [valence[mols[i][0][j]] for j in range(len(mols[i][0]))]
+    edge_val_sum = list(pd.DataFrame(mols[i][1]).sum())
+    if vals != edge_val_sum:
+      bad.append(i)
+  for i in range(len(mols)):
+    if i not in bad:
+      out.append(mols[i])
+  return out
+
+def trimVertexCount(mols, maxv):
+  out = []
+  for i in range(len(mols)):
+    if len(mols[i][0]) <= maxv:
+      out.append(mols[i])
+  return out
+
+#######################CODE BODY####################
 
 
-####CODE BODY####
+#MAKE SURE TO FILTER BASED ON MAX_VERTICES
+molData = np.load('data2020-10-14valencetrimmed.npy')
+#np.save('data2020-10-14valencetrimmed.npy', trimBadValence(molData))
+molData = np.array([[molData[i][0], graph2TensorTo3Tensor(np.array(molData[i][1]).astype(int))] for i in range(len(molData))])
 
+#HERE
+
+trainingData = []
+dataPerMol = 100
+for i in range(len(molData)):
+  print(i)
+  trainingData.append(generateTrainingPairsN(molData[i][1], molData[i][0], dataPerMol))
+
+np.save('trainingData2020-10-15.npy', np.array(trainingData))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#NN
 '''GRU implementation found online
 class GRUNet(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, n_layers, drop_prob=0.2):

@@ -5,7 +5,7 @@ import scfunctions as sc
 max_vertices = 40
 
 #MAKE SURE TO FILTER BASED ON MAX_VERTICES
-molData = np.load('data2020-10-14valencetrimmed.npy')
+molData = np.load('data2020-10-14valencetrimmed.npy', allow_pickle = True)
 #np.save('data2020-10-14valencetrimmed.npy', trimBadValence(molData))
 molData = sc.trimVertexCount(molData, max_vertices)
 molData = np.array([[molData[i][0], sc.graph2TensorTo3Tensor(np.array(molData[i][1]).astype(int))] for i in range(len(molData))])
@@ -15,7 +15,7 @@ molData = np.array([[molData[i][0], sc.graph2TensorTo3Tensor(np.array(molData[i]
 
 '''
 import sys
-np.set_printoptions(threshold=200000)
+np.set_printoptions(threshold=sys.maxsize)
 
 mData2 = np.load('data2020-10-14valencetrimmed.npy')
 dataPerMol = 1
@@ -28,14 +28,19 @@ totedges = np.array(mData2[0][1]).sum()/2
 
 #MISSING EDGES?????????
 '''
+startind = 0
+endind = 4000
+molSubset = molData[startind:endind]
+trainingData = [] #[molecule][datapointnumber][input or proboutput]
+dataPerMol = 50
+for i in range(len(molSubset)):
+  if i% 10 == 0:
+    print(i)
+  trainingData.append(sc.generateTrainingPairsN(molSubset[i][1], molSubset[i][0], dataPerMol, max_vertices))
+  if i% 100 == 0:
+    np.save('training0to4000mols50perData2020-10-27.npy', np.array(trainingData))
 
-trainingData = []
-dataPerMol = 100
-for i in range(len(molData)):
-  print(i)
-  trainingData.append(sc.generateTrainingPairsN(molData[i][1], molData[i][0], dataPerMol, max_vertices))
-
-np.save('trainingData2020-10-15.npy', np.array(trainingData))
+np.save('training0to4000mols50perData2020-10-27.npy', np.array(trainingData))
 
 
 

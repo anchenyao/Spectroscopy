@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import torch
 from datetime import date
 
 ####FUNCTIONS AND PREPROCESSING####
@@ -261,8 +262,8 @@ def generateTrainingPairsFull(molStart, molEnd, dataPerMol, max_vertices, date =
     print(i)
     trainingData.append(generateTrainingPairsN(molSubset[i][1], molSubset[i][0], dataPerMol, max_vertices))
     if i%10 == 0:
-      np.save('training{}to{}Data{}.npy'.format(str(molStart), str(molEnd), str(date.today())), np.array(trainingData))
-  np.save('training{}to{}Data{}.npy'.format(str(molStart), str(molEnd), str(date.today())), np.array(trainingData))
+      np.save('training{}to{}Data{}per{}.npy'.format(str(molStart), str(molEnd), str(dataPerMol), str(date.today())), np.array(trainingData))
+  np.save('training{}to{}Data{}per{}.npy'.format(str(molStart), str(molEnd), str(dataPerMol), str(date.today())), np.array(trainingData))
 
 def verifyTrainingPair(feats, nextprobs):
   preedges = np.zeros((len(nextprobs),len(nextprobs)))
@@ -286,4 +287,24 @@ def verifyTrainingPairSet(tdata):
       else:
         wrong.append(tdata[i][j])
   return correct, len(tdata) * len(tdata[0]) -correct, wrong
+
+def padZeros(mtx, outx, outy):
+  output = np.zeros([outx,outy,3])
+  output[:mtx.shape[0],:mtx.shape[1],:3] = mtx
+  return torch.FloatTensor(output)
+
+#sum of probabilities of correct edges
+def probabilityCorrect(modeloutputprobs, probs):
+  correctedges = probs > 0
+  correctprobs = correctedges * modeloutputprobs
+  return correctprobs.sum()
+
+def trimLowProbabilities(probs, iters, cutoff = 1/(40*40*3)):
+  newprobs = (probs > cutoff) * probs
+  newprobs /= newprobs.sum()
+  for i in range(1,iters):
+    newprobs = (newprobs > cutoff) * newprobs
+    newprobs /= newprobs.sum()
+  return newprobs
+
 

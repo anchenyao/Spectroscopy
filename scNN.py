@@ -8,6 +8,7 @@ from torchvision import datasets, transforms
 
 max_vertices = 40
 
+#tdata = np.load('training0to1070Data50per2020-10-20.npy', allow_pickle = True)
 tdata = np.load('training0to40Data1000per2020-10-20.npy', allow_pickle = True) #FIX OUTPUT DIMENSIONS
 tlist = []
 
@@ -34,7 +35,7 @@ stlist = [[stlist[i][0].view(idim),stlist[i][1].view(odim)] for i in range(len(s
 trainloader = torch.utils.data.DataLoader(stlist, batch_size=64, shuffle=True)
 
 #layers
-numLinLayers = 10
+numLinLayers = 20
 
 layerlist = [nn.Linear(idim, 256), nn.ReLU()]
 for i in range(numLinLayers):
@@ -44,12 +45,12 @@ layerlist.append(nn.Linear(256, odim))
 layerlist.append(nn.Softmax())
 
 
-#NN
+#NN-------------------------------------
 model = nn.Sequential(*layerlist)
 criterion = nn.BCELoss()
 # Optimizers require the parameters to optimize and a learning rate
-optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
-epochs = 100
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+epochs = 400
 for e in range(epochs):
   print('epoch = ' + str(e))
   running_loss = 0
@@ -62,6 +63,32 @@ for e in range(epochs):
     optimizer.step()
     running_loss += loss.item()
   print(f"Training loss: {running_loss/len(trainloader)}")
+
+#model = torch.load_state_dict(torch.load('model0to1000points50layers10LR003.pt'))
+
+#RENORMALIZE OUTPUT BY TRIMMING VALUES UNDER 1/(2*max_vertices)?
+
+'''
+correct_probs = []
+for i in range(len(stlist)):
+  correct_probs.append(float(sc.probabilityCorrect(model(stlist[i][0]),stlist[i][1])))
+probmean = np.array(correct_probs).mean()
+probstd = np.array(correct_probs).std()
+
+#WITH TRIM
+correct_probs = []
+for i in range(len(stlist)):
+  correct_probs.append(float(sc.probabilityCorrect(trimLowProbabilities(model(stlist[i][0]), 5, 0.02),stlist[i][1])))
+probmean = np.array(correct_probs).mean()
+probstd = np.array(correct_probs).std()
+probmean
+probstd
+
+'''
+
+
+
+
 
 
 '''
